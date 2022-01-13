@@ -1,68 +1,78 @@
-from datetime import datetime,date
-from flask import Flask, render_template, request, redirect, url_for
-from flask_sqlalchemy import SQLAlchemy
-
+#!/usr/bin/env python3
+from flask import Flask, request, Response, abort, render_template
+from flask_login import LoginManager, login_user, logout_user, login_required, UserMixin
+from collections import defaultdict
 
 app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///todo.db'
-db = SQLAlchemy(app)
+login_manager = LoginManager()
+login_manager.init_app(app)
+app.config['SECRET_KEY'] = "secret"
 
-class Post(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    title = db.Column(db.String(30), nullable=False)
-    detail = db.Column(db.String(100))
-    due = db.Column(db.DateTime, nullable=False)
+class User(UserMixin):
+    def __init__(self, id, name, password):
+        self.id = id
+        self.name = name
+        self.password = password
 
+# ログイン用ユーザー作成
+users = {
+    1: User(1, "user01", "password"),
+    2: User(2, "user02", "password"),
+    3: User(3, "yorii", "seito")
+}
 
-@app.route('/', methods=['GET', 'POST'])
-def index():
-    if request.method == 'GET':
-        posts = Post.query.order_by(Post.due).all()
-        return render_template("index.html", posts=posts, today=date.today())
+# ユーザーチェックに使用する辞書作成
+nested_dict = lambda: defaultdict(nested_dict)
+user_check = nested_dict()
+for i in users.values():
+    user_check[i.name]["password"] = i.password
+    user_check[i.name]["id"] = i.id
+
+@login_manager.user_loader
+def load_user(user_id):
+    return users.get(int(user_id))
+
+@app.route('/')
+def home():
+    return Response("ログインから入室してください。: <a href='/login/'>ログイン</a> <a href='/logout/'>ログアウト</a>")
+
+# ログインしないと表示されないパス
+@app.route('/protected/')
+@login_required
+def protected():
+    return Response('''
+    protected<br />
+    <a href="/logout/">ログアウト</a>
+    ''')
+
+# ログインパス
+@app.route('/login/', methods=["GET", "POST"])
+def login():
+    if(request.method == "POST"):
+        # ユーザーチェック
+        if(request.form["username"] in user_check and request.form["password"] == user_check[request.form["username"]]["password"]):
+            # ユーザーが存在した場合はログイン
+            login_user(users.get(user_check[request.form["username"]]["id"]))
+            return Response('''
+            ログイン中<br />
+            <a href="https://sites.google.com/view/r3-yoriidoyojuku/%E3%83%9B%E3%83%BC%E3%83%A0">よりE土曜塾・英検対策講座サイトへ</a><br />
+            <a href="/logout/">ログアウト</a>
+            ''')
+        else:
+            return abort(401)
     else:
-        title = request.form.get('title')
-        detail = request.form.get('detail')
-        due = request.form.get('due')
+        return render_template("login.html")
 
-        due = datetime.strptime(due,'%Y-%m-%d')
-        new_post = Post(title=title, detail=detail, due=due)
-        db.session.add(new_post)
-        db.session.commit()
-
-        return redirect('/')
-
-
-@app.route('/create')
-def create():
-    return render_template("create.html")
-
-@app.route('/detail/<int:id>')
-def read(id):
-    post = Post.query.get(id)
-    return render_template("detail.html", post=post)
-
-@app.route('/update/<int:id>', methods=['GET', 'POST'])
-def update(id):
-    post = Post.query.get(id)
-    if request.method == 'GET':
-        return render_template('update.html', post=post)
-    else:
-        post.title = request.form.get('title')
-        post.detail = request.form.get('detail')
-        post.due = datetime.strptime(request.form.get('due'), '%Y-%m-%d')
-
-        db.session.commit()
-        return redirect('/')
-
-
-@app.route('/delete/<int:id>')
-def delete(id):
-    post = Post.query.get(id)
-
-    db.session.delete(post)
-    db.session.commit()
-    return redirect('/')
-
+# ログアウトパス
+@app.route('/logout/')
+@login_required
+def logout():
+    logout_user()
+    return Response('''
+    ログアウトしました<br />
+    <a href="/login/">ログイン</a>
+    ''')
 
 if __name__ == '__main__':
+    #app.run(host="0.0.0.0",port=8080,debug=True)
     app.run()
